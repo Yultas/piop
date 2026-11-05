@@ -39,7 +39,8 @@ fi
 FRONTEND_PORT=${FRONTEND_PORT##*:}
 BACKEND_PORT=${BACKEND_PORT##*:}
 
-"${compose[@]}" up -d --build "$@"
+# podman-compose keeps a running container even when its image was rebuilt, so force the new image in
+"${compose[@]}" up -d --build --force-recreate "$@"
 
 # Wait up to 60 seconds for the backend health endpoint.
 healthy=0
