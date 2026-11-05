@@ -35,7 +35,8 @@ class CreateInviteRequest(BaseModel):
 class ClaimInviteRequest(BaseModel):
     username: str = Field(max_length=150)
     password: str = Field(max_length=1024)
-    raw_fingerprint: str = Field(max_length=8192)
+    # Includes a canvas PNG data URL; its size depends on the client's fonts and often exceeds 8 KiB
+    raw_fingerprint: str = Field(max_length=131072)
 
 @router.post("")
 async def create_invite(

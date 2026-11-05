@@ -174,7 +174,8 @@ async function handleClaim() {
     if (err.status === 403 && err.detail === 'auth.invite.device_locked') {
       isDeviceLocked.value = true
     } else {
-      submitError.value = err.detail || err.message || 'common.error'
+      // A 422 detail is a list of validation errors, not a message key
+      submitError.value = typeof err.detail === 'string' ? err.detail : 'common.error'
     }
   } finally {
     submitting.value = false

@@ -238,3 +238,15 @@ def test_18_deleted_user_session_does_not_reach_next_user(c):
     assert res.status_code == 401
     assert res.json()["detail"] == "auth.invalid_token"
     assert c.get("/api/auth/me", headers=successor_headers).status_code == 200
+
+def test_19_claim_accepts_large_canvas_fingerprint(c):
+    """A canvas data URL often exceeds 8 KiB, depending on the client's fonts; the claim must still work."""
+    admin = state["jwt"]
+    invite = c.post("/api/invites", json={"workspace_id": state["ws_id"], "target_role": "member", "expires_in_days": 3},
+                    headers=admin).json()["token"]
+    res = c.post(f"/api/invites/{invite}/claim", json={
+        "username": f"mcp_bigfp_{uuid.uuid4().hex[:8]}",
+        "password": "SecureMcpPass_2026!",
+        "raw_fingerprint": "canvas:data:image/png;base64," + "A" * 20000,
+    })
+    assert res.status_code == 200
