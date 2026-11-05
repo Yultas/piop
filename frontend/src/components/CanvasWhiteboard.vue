@@ -670,7 +670,11 @@ function onPointerDown(e) {
   if (BRUSH_TOOLS.includes(tool.value)) startStroke(w, e)
   else if (SHAPE_TOOLS.includes(tool.value)) startShape(w)
   else if (tool.value === 'eraser') startErase(p)
-  else if (tool.value === 'text') startText(w)
+  else if (tool.value === 'text') {
+    // Otherwise the compatibility mousedown that follows moves focus off the new editor, which commits it empty
+    e.preventDefault()
+    startText(w)
+  }
   else if (tool.value === 'select') startSelect(p, w, e)
 }
 
