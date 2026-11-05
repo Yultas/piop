@@ -61,14 +61,14 @@ def _tool_entry(tool: Tool) -> dict:
         "annotations": dict(KIND_ANNOTATIONS[tool.kind]),
     }
 
-async def _member_roles(session: AsyncSession, user: User) -> dict[int, str]:
-    rows = (await session.execute(select(WorkspaceMember).where(WorkspaceMember.user_id == user.id))).scalars().all()
+async def _member_roles(session: AsyncSession, user_id: int) -> dict[int, str]:
+    rows = (await session.execute(select(WorkspaceMember).where(WorkspaceMember.user_id == user_id))).scalars().all()
     return {m.workspace_id: m.role for m in rows}
 
-async def _list_workspaces(session: AsyncSession, user: User) -> list[dict]:
-    roles = await _member_roles(session, user)
+async def _list_workspaces(session: AsyncSession, user_id: int, is_admin: bool) -> list[dict]:
+    roles = await _member_roles(session, user_id)
     stmt = select(Workspace).order_by(Workspace.id)
-    if not user.is_global_admin:
+    if not is_admin:
         stmt = stmt.where(Workspace.id.in_(list(roles)))
     workspaces = (await session.execute(stmt)).scalars().all()
     return [
@@ -76,30 +76,31 @@ async def _list_workspaces(session: AsyncSession, user: User) -> list[dict]:
         for ws in workspaces
     ]
 
-async def _can_access(session: AsyncSession, user: User, workspace_id) -> bool:
-    if not isinstance(workspace_id, int) or isinstance(workspace_id, bool):
+async def _can_access(session: AsyncSession, user_id: int, is_admin: bool, workspace_id) -> bool:
+    # The range check keeps huge ids from reaching SQLite, which cannot store them
+    if not isinstance(workspace_id, int) or isinstance(workspace_id, bool) or not 0 < workspace_id < 2**63:
         return False
     if await session.get(Workspace, workspace_id) is None:
         return False
-    if user.is_global_admin:
+    if is_admin:
         return True
     member = (await session.execute(select(WorkspaceMember.id).where(
-        WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user.id,
+        WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user_id,
     ))).first()
     return member is not None
 
-async def _call_tool(params: dict, user: User, session: AsyncSession) -> dict:
+async def _call_tool(params: dict, user_id: int, is_admin: bool, session: AsyncSession) -> dict:
     name = params.get("name")
     args = params.get("arguments") or {}
     if not isinstance(name, str) or not isinstance(args, dict):
         raise RpcError(-32602, "Invalid params")
     if name == "list_workspaces":
-        return _tool_result(json.dumps(await _list_workspaces(session, user), ensure_ascii=False), False)
+        return _tool_result(json.dumps(await _list_workspaces(session, user_id, is_admin), ensure_ascii=False), False)
     if name not in TOOLS_BY_NAME:
         raise RpcError(-32602, f"Unknown tool: {name}")
 
     workspace_id = args.get("workspace_id")
-    if not await _can_access(session, user, workspace_id):
+    if not await _can_access(session, user_id, is_admin, workspace_id):
         return _tool_result(f"workspace {workspace_id} not found or access denied", True)
     modes = await get_modes(session, workspace_id)
     if modes.get(name, "off") == "off":
@@ -107,11 +108,11 @@ async def _call_tool(params: dict, user: User, session: AsyncSession) -> dict:
 
     # "confirm" runs too: the MCP client does its own confirmation.
     tool_args = {k: v for k, v in args.items() if k != "workspace_id"}
-    ctx = ToolContext(session=session, user_id=user.id, workspace_id=workspace_id)
+    ctx = ToolContext(session=session, user_id=user_id, workspace_id=workspace_id)
     status_, text = await execute_tool(ctx, name, tool_args)
     return _tool_result(text, status_ == "error")
 
-async def _run_method(method: str, params: dict, user: User, session: AsyncSession):
+async def _run_method(method: str, params: dict, user_id: int, is_admin: bool, session: AsyncSession):
     if method == "initialize":
         requested = params.get("protocolVersion")
         return {
@@ -125,10 +126,12 @@ async def _run_method(method: str, params: dict, user: User, session: AsyncSessi
     if method == "tools/list":
         return {"tools": [LIST_WORKSPACES_TOOL, *(_tool_entry(t) for t in TOOLS)]}
     if method == "tools/call":
-        return await _call_tool(params, user, session)
+        return await _call_tool(params, user_id, is_admin, session)
     raise RpcError(-32601, "Method not found")
 
-async def _dispatch(msg, user: User, session: AsyncSession) -> dict | None:
+async def _dispatch(msg, user_id: int, is_admin: bool, session: AsyncSession) -> dict | None:
+    if isinstance(msg, dict) and "id" in msg and "method" not in msg and ("result" in msg or "error" in msg):
+        return None  # the client's reply to a request of ours: nothing to answer
     if not isinstance(msg, dict) or not isinstance(msg.get("method"), str):
         return _error(msg.get("id") if isinstance(msg, dict) else None, -32600, "Invalid Request")
     if "id" not in msg:
@@ -137,7 +140,7 @@ async def _dispatch(msg, user: User, session: AsyncSession) -> dict | None:
     if not isinstance(params, dict):
         return _error(msg["id"], -32602, "Invalid params")
     try:
-        return _result(msg["id"], await _run_method(msg["method"], params, user, session))
+        return _result(msg["id"], await _run_method(msg["method"], params, user_id, is_admin, session))
     except RpcError as exc:
         return _error(msg["id"], exc.code, str(exc))
 
@@ -147,6 +150,9 @@ async def mcp_endpoint(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session)
 ):
+    # Plain values rather than the ORM user: a tool error rolls the session back, which expires it
+    user_id = user.id
+    is_admin = user.is_global_admin
     try:
         body = await request.json()
     except ValueError:
@@ -157,12 +163,12 @@ async def mcp_endpoint(
             return JSONResponse(status_code=400, content=_error(None, -32600, "Invalid Request"))
         replies = []
         for msg in body:
-            reply = await _dispatch(msg, user, session)
+            reply = await _dispatch(msg, user_id, is_admin, session)
             if reply is not None:
                 replies.append(reply)
         return JSONResponse(replies) if replies else Response(status_code=202)
 
-    reply = await _dispatch(body, user, session)
+    reply = await _dispatch(body, user_id, is_admin, session)
     if reply is None:
         return Response(status_code=202)
     return JSONResponse(reply)

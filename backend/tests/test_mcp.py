@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import uuid
 import pytest
 from fastapi.testclient import TestClient
 
@@ -146,3 +147,79 @@ def test_11_protocol_errors_and_auth(c):
 
 def test_12_get_is_not_allowed(c):
     assert c.get("/api/mcp", headers=api_headers(state["token"])).status_code == 405
+
+def make_member(c, admin: dict, ws_id: int, label: str) -> tuple[dict, str]:
+    """Claim a fresh invite as a regular user; returns (session headers, username)."""
+    invite = c.post("/api/invites", json={"workspace_id": ws_id, "target_role": "member", "expires_in_days": 3},
+                    headers=admin).json()["token"]
+    username = f"mcp_{label}_{uuid.uuid4().hex[:8]}"
+    res = c.post(f"/api/invites/{invite}/claim", json={
+        "username": username,
+        "password": "SecureMcpPass_2026!",
+        "raw_fingerprint": f"EINK_MCP_{uuid.uuid4().hex}",
+    })
+    assert res.status_code == 200
+    return api_headers(res.json()["access_token"]), username
+
+def user_id_of(c, admin: dict, username: str) -> int:
+    return next(u["id"] for u in c.get("/api/admin/users", headers=admin).json() if u["username"] == username)
+
+def test_13_deleted_user_token_does_not_reach_next_user(c):
+    """Deleting a user revokes their API tokens; a new user reusing the freed id must not inherit them."""
+    admin = state["jwt"]
+    member, username = make_member(c, admin, state["ws_id"], "doomed")
+    member_id = user_id_of(c, admin, username)
+    token = c.post("/api/auth/tokens", json={"name": "doomed"}, headers=member).json()["token"]
+    assert c.get("/api/auth/me", headers=api_headers(token)).status_code == 200
+
+    assert c.delete(f"/api/admin/users/{member_id}", headers=admin).status_code == 200
+    _, successor = make_member(c, admin, state["ws_id"], "successor")
+    # The successor is the newest row, so SQLite hands it the id just freed: the case the token must not reach
+    assert user_id_of(c, admin, successor) == member_id
+    res = c.get("/api/auth/me", headers=api_headers(token))
+    assert res.status_code == 401
+    assert res.json()["detail"] == "auth.invalid_token"
+
+def test_14_membership_limits_list_and_access(c):
+    admin = state["jwt"]
+    ws_b = c.post("/api/workspaces", json={"name": "MCP other workspace"}, headers=admin).json()["id"]
+    member, _ = make_member(c, admin, state["ws_id"], "member")
+    token = c.post("/api/auth/tokens", json={"name": "member agent"}, headers=member).json()["token"]
+
+    listed = tool_call(c, "list_workspaces", {}, api_headers(token))
+    ids = [w["id"] for w in json.loads(listed["content"][0]["text"])]
+    assert state["ws_id"] in ids
+    assert ws_b not in ids
+
+    denied = tool_call(c, "list_tasks", {"workspace_id": ws_b}, api_headers(token))
+    assert denied["isError"] is True
+    assert "not found or access denied" in denied["content"][0]["text"]
+    allowed = tool_call(c, "list_tasks", {"workspace_id": state["ws_id"]}, api_headers(token))
+    assert allowed["isError"] is False
+
+def test_15_batch_survives_a_tool_error(c):
+    """A failed tool call rolls the session back; later messages in the same batch must still be answered."""
+    batch = [
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+         "params": {"name": "update_task", "arguments": {"workspace_id": state["ws_id"], "task_id": 999999}}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+         "params": {"name": "list_tasks", "arguments": {"workspace_id": state["ws_id"]}}},
+    ]
+    res = rpc(c, batch, api_headers(state["token"]))
+    assert res.status_code == 200
+    first, second = res.json()
+    assert first["id"] == 1 and first["result"]["isError"] is True
+    assert second["id"] == 2 and second["result"]["isError"] is False
+
+def test_16_oversized_workspace_id_is_denied(c):
+    result = tool_call(c, "list_tasks", {"workspace_id": 10**30}, api_headers(state["token"]))
+    assert result["isError"] is True
+    assert "not found or access denied" in result["content"][0]["text"]
+
+def test_17_client_response_object_gets_202(c):
+    res = rpc(c, {"jsonrpc": "2.0", "id": 7, "result": {}}, api_headers(state["token"]))
+    assert res.status_code == 202
+    assert res.content == b""
+    res = rpc(c, {"jsonrpc": "2.0", "id": 8, "error": {"code": -32000, "message": "x"}}, api_headers(state["token"]))
+    assert res.status_code == 202
+    assert res.content == b""

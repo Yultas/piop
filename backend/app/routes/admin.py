@@ -11,7 +11,7 @@ from backend.app.config import settings
 from backend.app.models import (
     User, Workspace, WorkspaceMember, WorkspaceInvite, WorkspaceFile, WorkspaceFolder,
     Channel, Message, Task, Document,
-    WorkspaceAIPermission, AIConversation, AIMessage
+    WorkspaceAIPermission, AIConversation, AIMessage, ApiToken
 )
 from backend.app.ai import llm
 from backend.app.ai.agent import get_ai_settings, is_configured
@@ -132,6 +132,8 @@ async def delete_user(
     await session.execute(delete(AIMessage).where(AIMessage.conversation_id.in_(user_convs)))
     await session.execute(delete(AIConversation).where(AIConversation.user_id == user_id))
     await session.execute(delete(WorkspaceMember).where(WorkspaceMember.user_id == user_id))
+    # Tokens must die with the user: a reused user id would otherwise inherit them
+    await session.execute(delete(ApiToken).where(ApiToken.user_id == user_id))
     await session.delete(target)
     await session.commit()
     return {"id": user_id, "deleted": True}
