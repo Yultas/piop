@@ -31,6 +31,13 @@ env_value() {
 }
 FRONTEND_PORT=$(env_value FRONTEND_PORT 3000)
 BACKEND_PORT=$(env_value BACKEND_PORT 8080)
+# Values may be host:port (e.g. 127.0.0.1:3000); keep the port.
+FRONTEND_HOST=""
+if [[ "$FRONTEND_PORT" == *:* ]]; then
+  FRONTEND_HOST=${FRONTEND_PORT%:*}
+fi
+FRONTEND_PORT=${FRONTEND_PORT##*:}
+BACKEND_PORT=${BACKEND_PORT##*:}
 
 "${compose[@]}" up -d --build "$@"
 
@@ -51,8 +58,9 @@ fi
 echo
 echo "Pi'op is running:"
 echo "  Site:        http://localhost:$FRONTEND_PORT"
-# Show the first LAN address when one is available.
-if ip=$(hostname -I 2>/dev/null | awk '{print $1}') && [ -n "$ip" ]; then
+# Show the first LAN address when one is available, unless the UI is bound to localhost.
+if [ "$FRONTEND_HOST" != "127.0.0.1" ] && [ "$FRONTEND_HOST" != "localhost" ] \
+  && ip=$(hostname -I 2>/dev/null | awk '{print $1}') && [ -n "$ip" ]; then
   echo "  On network:  http://$ip:$FRONTEND_PORT"
 fi
 echo "  Backend API: http://127.0.0.1:$BACKEND_PORT/api  (local only)"

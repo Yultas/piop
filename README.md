@@ -97,7 +97,7 @@ Minimal Caddy setup on a VPS:
    }
    ```
 
-Caddy gets and renews the Let's Encrypt certificate automatically. Open ports 80 and 443 only, and keep 3000 closed in the firewall (e.g. `ufw allow 80,443/tcp`). The MCP URL is then `https://piop.example.com/api/mcp`.
+Caddy gets and renews the Let's Encrypt certificate automatically. Open ports 80 and 443 only (e.g. `ufw allow 80,443/tcp`). Docker publishes ports past ufw, so also bind the web UI to localhost by setting `FRONTEND_PORT=127.0.0.1:3000` in `.env`; otherwise port 3000 stays reachable over plain HTTP. The MCP URL is then `https://piop.example.com/api/mcp`.
 
 ## Development
 
