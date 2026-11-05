@@ -13,6 +13,7 @@ from backend.app.routes.files import router as files_router
 from backend.app.routes.channels import router as channels_router
 from backend.app.routes.tasks import router as tasks_router
 from backend.app.routes.documents import router as documents_router
+from backend.app.routes.board_ws import router as board_ws_router
 from backend.app.routes.typst import router as typst_router
 from backend.app.routes.admin import router as admin_router
 from backend.app.routes.ai import router as ai_router
@@ -57,6 +58,7 @@ app.include_router(files_router)
 app.include_router(channels_router)
 app.include_router(tasks_router)
 app.include_router(documents_router)
+app.include_router(board_ws_router)
 app.include_router(typst_router)
 app.include_router(admin_router)
 app.include_router(ai_router)
