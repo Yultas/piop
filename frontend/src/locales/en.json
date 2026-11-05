@@ -266,6 +266,8 @@
     "saved": "Saved",
     "unsaved": "Unsaved changes",
     "saving": "Saving…",
+    "peers": "Also here: {names}",
+    "reconnecting": "Reconnecting…",
     "save_error": "Save failed",
     "undo": "Undo",
     "redo": "Redo",

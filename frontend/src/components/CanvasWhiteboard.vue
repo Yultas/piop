@@ -11,6 +11,7 @@
         <button type="button" class="eink-btn eink-btn-sm" :title="$t('canvas.rename_board')" @click="renameBoard"><Pencil :size="14" /></button>
         <button type="button" class="eink-btn eink-btn-sm" :title="$t('canvas.delete_board')" :disabled="boardId === null" @click="deleteBoard"><Trash2 :size="14" /></button>
         <span class="wb-save-state text-xs text-muted">{{ saveLabel }}</span>
+        <span v-if="peerNames" class="wb-save-state text-xs text-muted">{{ $t('canvas.peers', { names: peerNames }) }}</span>
       </div>
 
       <div class="wb-group">
@@ -172,6 +173,8 @@ import {
   transformElement, drawElement, drawBackground, createBudget, visibleWorldBounds, contentBounds,
   resolveImageSize, exportPng, exportSvg
 } from '../whiteboard/engine'
+import { diffState, applyOps } from '../whiteboard/sync'
+import { connectBoard } from '../whiteboard/live'
 
 const props = defineProps({
   workspaceId: {
@@ -216,6 +219,8 @@ const boards = ref([])
 const boardId = ref(null)
 const boardTitle = ref('')
 const saveState = ref('saved')
+const liveStatus = ref('off') // off | connecting | live | offline | denied
+const peers = ref([])
 
 // Bumped whenever the non-reactive document changes, to refresh derived UI
 const revision = ref(0)
@@ -233,6 +238,14 @@ let past = []
 let future = []
 let selection = new Set()
 const view = { x: 0, y: 0, zoom: 1 }
+
+// Live sync: `shadow` is what the server has plus what we sent, `acked` only what it confirmed
+let live = null
+let shadow = null
+let acked = null
+let pending = new Map() // cid -> ops sent, not yet acked
+let liveEver = false
+let myConnId = ''
 
 let width = 0
 let height = 0
@@ -273,9 +286,10 @@ const layersView = computed(() => {
 })
 const canUndo = computed(() => (revision.value, past.length > 0))
 const canRedo = computed(() => (revision.value, future.length > 0))
-const saveLabel = computed(() => ({
+const saveLabel = computed(() => liveStatus.value === 'offline' ? t('canvas.reconnecting') : ({
   saved: t('canvas.saved'), dirty: t('canvas.unsaved'), saving: t('canvas.saving'), error: t('canvas.save_error')
 }[saveState.value]))
+const peerNames = computed(() => [...new Set(peers.value.filter((p) => p.id !== myConnId).map((p) => p.user))].join(', '))
 
 const textEditorStyle = computed(() => {
   if (!textEditor.value) return {}
@@ -1184,13 +1198,145 @@ const base = computed(() => `/api/workspaces/${props.workspaceId}/documents`)
 
 function markDirty() {
   saveState.value = 'dirty'
+  if (liveEver && boardId.value) return syncNow()
   clearTimeout(saveTimer)
   saveTimer = setTimeout(save, 1200)
+}
+
+// ---------- live sync ----------
+
+function state() {
+  return { layers: doc.layers, background: doc.background }
+}
+
+function refreshSaveState() {
+  if (liveStatus.value === 'live') saveState.value = pending.size ? 'saving' : 'saved'
+}
+
+// Send everything that changed since the last send; unsent changes wait for the next connect
+function syncNow() {
+  if (liveStatus.value !== 'live') return
+  const ops = diffState(shadow, state())
+  if (boardTitle.value !== shadow.title) ops.push({ op: 'title', title: boardTitle.value })
+  const cid = ops.length ? live.send(ops) : null
+  if (cid !== null) {
+    pending.set(cid, ops)
+    shadow = { ...state(), title: boardTitle.value }
+  }
+  refreshSaveState()
+}
+
+function setDocState({ layers, background }) {
+  doc.layers = layers
+  doc.background = background
+  if (!layers.some((l) => l.id === doc.activeLayerId)) doc.activeLayerId = layers[layers.length - 1].id
+  const ids = new Set(layers.flatMap((l) => l.elements.map((el) => el.id)))
+  setSelection([...selection].filter((id) => ids.has(id)))
+  revision.value += 1
+  requestRender()
+}
+
+function setTitle(title) {
+  boardTitle.value = title
+  boards.value = boards.value.map((b) => (b.id === boardId.value ? { ...b, title } : b))
+}
+
+function startLive() {
+  stopLive()
+  if (!boardId.value) return
+  shadow = { ...state(), title: boardTitle.value }
+  acked = state()
+  pending = new Map()
+  liveEver = false
+  live = connectBoard({
+    workspaceId: props.workspaceId,
+    boardId: boardId.value,
+    onInit: onLiveInit,
+    onOps: onLiveOps,
+    onAck: onLiveAck,
+    onReset: onLiveReset,
+    onPeers: (list) => { peers.value = list },
+    onStatus: onLiveStatus
+  })
+}
+
+function stopLive() {
+  syncNow()
+  live?.close()
+  live = null
+  liveStatus.value = 'off'
+  peers.value = []
+}
+
+function onLiveStatus(s) {
+  liveStatus.value = s
+  // Denied means the socket is gone for good: the HTTP save path takes over
+  if (s === 'denied' && liveEver) {
+    liveEver = false
+    markDirty()
+  }
+}
+
+function onLiveInit(msg) {
+  const keepTitle = hasPendingTitle() || boardTitle.value !== shadow.title
+  const local = [...pending.values()].flat().concat(diffState(shadow, state()))
+  const server = { layers: msg.doc.layers, background: msg.doc.background }
+  setDocState(applyOps(server, local))
+  acked = server
+  pending = new Map()
+  shadow = { ...server, title: msg.title }
+  if (!keepTitle) setTitle(msg.title)
+  liveEver = true
+  myConnId = msg.you
+  peers.value = msg.peers
+  syncNow()
+}
+
+function onLiveOps(msg) {
+  syncNow()
+  acked = applyOps(acked, msg.ops)
+  setDocState(applyOps(acked, [...pending.values()].flat()))
+  shadow = { ...state(), title: shadow.title }
+  // Rebase undo history so undo keeps others' changes and reverts only ours
+  const rebase = (layers) => applyOps({ layers, background: doc.background }, msg.ops).layers
+  past = past.map(rebase)
+  future = future.map(rebase)
+  if (gesture?.kind === 'erase') gesture.before = rebase(gesture.before)
+  // Our own unsent title wins: the server applies it after this remote one
+  const title = msg.ops.filter((o) => o.op === 'title').pop()
+  if (title && !hasPendingTitle()) {
+    setTitle(title.title)
+    shadow.title = title.title
+  }
+  refreshSaveState()
+}
+
+function hasPendingTitle() {
+  return [...pending.values()].some((ops) => ops.some((o) => o.op === 'title'))
+}
+
+function onLiveAck(cid) {
+  const ops = pending.get(cid)
+  if (ops) acked = applyOps(acked, ops)
+  pending.delete(cid)
+  refreshSaveState()
+}
+
+function onLiveReset(msg) {
+  acked = { layers: msg.doc.layers, background: msg.doc.background }
+  pending = new Map()
+  past = []
+  future = []
+  setDocState(acked)
+  shadow = { ...acked, title: msg.title }
+  setTitle(msg.title)
+  refreshSaveState()
 }
 
 async function save() {
   clearTimeout(saveTimer)
   saveTimer = null
+  if (liveEver && boardId.value) return syncNow()
   if (saveState.value !== 'dirty' || !props.workspaceId) return
   saveState.value = 'saving'
   const workspaceId = props.workspaceId
@@ -1203,6 +1349,7 @@ async function save() {
       const created = await api.post(`/api/workspaces/${workspaceId}/documents`, { ...payload, doc_type: 'canvas' })
       boardId.value = created.id
       boards.value = [...boards.value, { id: created.id, title: created.title }]
+      startLive()
     }
     // Changes made while the request was in flight are saved by the next timer
     if (saveState.value === 'saving') saveState.value = 'saved'
@@ -1213,6 +1360,7 @@ async function save() {
 }
 
 function loadBoard(record) {
+  stopLive()
   doc = record ? parseDocument(record.content_raw || '', t('canvas.layer_default', { n: 1 })) : createDocument(t('canvas.layer_default', { n: 1 }))
   boardId.value = record ? record.id : null
   boardTitle.value = record ? record.title : t('canvas.board_default', { n: boards.value.length + 1 })
@@ -1230,6 +1378,7 @@ function loadBoard(record) {
   } else {
     pendingInitialView = true
   }
+  if (record) startLive()
 }
 
 async function fetchBoards(selectId = null) {
@@ -1271,6 +1420,7 @@ async function renameBoard() {
 async function deleteBoard() {
   if (!boardId.value || !confirm(t('canvas.delete_board_confirm', { name: boardTitle.value }))) return
   clearTimeout(saveTimer)
+  stopLive()
   try {
     await api.delete(`${base.value}/${boardId.value}`)
     boards.value = boards.value.filter((b) => b.id !== boardId.value)
@@ -1392,6 +1542,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   save()
+  stopLive()
   resizeObserver?.disconnect()
   cancelAnimationFrame(frame)
   window.removeEventListener('keydown', onKeyDown)

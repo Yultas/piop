@@ -7,6 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from backend.app.database import get_session
 from backend.app.models import Workspace, WorkspaceMember, Document, User
 from backend.app.auth import get_current_user
+from backend.app.routes.board_ws import board_rooms
 
 router = APIRouter(prefix="/api/workspaces/{workspace_id}/documents", tags=["documents"])
 
@@ -96,9 +97,10 @@ async def update_document(
         doc.title = req.title
     doc.content_raw = req.content_raw
     doc.updated_at = datetime.now(timezone.utc)
-    
+
     session.add(doc)
     await session.commit()
+    await board_rooms.external_update(doc.id, doc.content_raw, doc.title)
     await session.refresh(doc)
     return doc
 
@@ -115,4 +117,5 @@ async def delete_document(
         raise HTTPException(status_code=404, detail="documents.not_found")
     await session.delete(doc)
     await session.commit()
+    await board_rooms.close_document(document_id)
     return {"ok": True}

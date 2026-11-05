@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Callable
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from backend.app.models import Channel, Document, Message, Task, User, WorkspaceFile, WorkspaceFolder
+from backend.app.routes.board_ws import board_rooms
 from backend.app.search import search_workspace
 
 DEFAULT_MODES = {"read": "auto", "write": "confirm", "delete": "off"}
@@ -214,6 +215,7 @@ async def _update_document(ctx: ToolContext, args: dict):
     doc.updated_at = datetime.now(timezone.utc)
     ctx.session.add(doc)
     await ctx.session.commit()
+    await board_rooms.external_update(doc.id, doc.content_raw, doc.title)
     return {"updated": {"id": doc.id, "title": doc.title}}
 
 
@@ -242,6 +244,7 @@ async def _delete_document(ctx: ToolContext, args: dict):
     doc = await _get_owned(ctx, Document, args.get("document_id"), "Document")
     await ctx.session.delete(doc)
     await ctx.session.commit()
+    await board_rooms.close_document(doc.id)
     return {"deleted": {"document_id": doc.id, "title": doc.title}}
 
 
