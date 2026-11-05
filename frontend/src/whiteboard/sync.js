@@ -4,7 +4,7 @@
  * applier. State is `{ layers, background }`. Layers and elements are never
  * mutated, so `===` means "unchanged".
  *
- * An op is `{ t, ...fields }`, where `t` is the op name from the protocol table.
+ * An op is `{ op, ...fields }`, where `op` is the op name from the protocol table.
  */
 
 /** Layer fields that `layer.set` may change. */
@@ -122,7 +122,7 @@ function deleteLayer(layers, id) {
 export function applyOps(state, ops) {
   let { layers, background } = state
   for (const op of ops) {
-    switch (op.t) {
+    switch (op.op) {
       case 'el.add':
         layers = addElement(layers, op)
         break
@@ -165,14 +165,14 @@ function diffLayer(before, after, nextElIds, ops) {
   for (const key of LAYER_FLAGS) {
     if (before[key] !== after[key]) flags[key] = after[key]
   }
-  if (Object.keys(flags).length) ops.push({ t: 'layer.set', id: after.id, set: flags })
+  if (Object.keys(flags).length) ops.push({ op: 'layer.set', id: after.id, set: flags })
 
   const prevEls = new Map(before.elements.map(el => [el.id, el]))
   for (const el of before.elements) {
-    if (!nextElIds.has(el.id)) ops.push({ t: 'el.del', id: el.id })
+    if (!nextElIds.has(el.id)) ops.push({ op: 'el.del', id: el.id })
   }
   after.elements.forEach((el, index) => {
-    if (!prevEls.has(el.id)) ops.push({ t: 'el.add', layer: after.id, index, el })
+    if (!prevEls.has(el.id)) ops.push({ op: 'el.add', layer: after.id, index, el })
   })
   for (const el of after.elements) {
     const old = prevEls.get(el.id)
@@ -186,10 +186,10 @@ function diffLayer(before, after, nextElIds, ops) {
       if (!Object.hasOwn(el, key)) unset.push(key)
     }
     if (!Object.keys(set).length && !unset.length) continue
-    ops.push(unset.length ? { t: 'el.set', id: el.id, set, unset } : { t: 'el.set', id: el.id, set })
+    ops.push(unset.length ? { op: 'el.set', id: el.id, set, unset } : { op: 'el.set', id: el.id, set })
   }
   if (!sameRelativeOrder(before.elements, after.elements)) {
-    ops.push({ t: 'el.order', layer: after.id, ids: after.elements.map(el => el.id) })
+    ops.push({ op: 'el.order', layer: after.id, ids: after.elements.map(el => el.id) })
   }
 }
 
@@ -211,10 +211,10 @@ export function diffState(prev, next) {
   // is going, the first new layer is added before the deletes.
   if (gone.length && gone.length === prev.layers.length && added.length) {
     const first = added.shift()
-    ops.push({ t: 'layer.add', index: first.index, layer: first.layer })
+    ops.push({ op: 'layer.add', index: first.index, layer: first.layer })
   }
-  for (const layer of gone) ops.push({ t: 'layer.del', id: layer.id })
-  for (const { layer, index } of added) ops.push({ t: 'layer.add', index, layer })
+  for (const layer of gone) ops.push({ op: 'layer.del', id: layer.id })
+  for (const { layer, index } of added) ops.push({ op: 'layer.add', index, layer })
 
   const nextElIds = new Set(next.layers.flatMap(layer => layer.elements.map(el => el.id)))
   for (const layer of next.layers) {
@@ -222,10 +222,10 @@ export function diffState(prev, next) {
     if (before && before !== layer) diffLayer(before, layer, nextElIds, ops)
   }
   if (!sameRelativeOrder(prev.layers, next.layers)) {
-    ops.push({ t: 'layer.order', ids: next.layers.map(layer => layer.id) })
+    ops.push({ op: 'layer.order', ids: next.layers.map(layer => layer.id) })
   }
   if (prev.background !== next.background) {
-    ops.push({ t: 'doc.set', set: { background: next.background } })
+    ops.push({ op: 'doc.set', set: { background: next.background } })
   }
   return ops
 }
