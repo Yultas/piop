@@ -16,20 +16,17 @@ A self-hosted workspace for small teams, with a minimal monochrome interface. Ch
 
 ## Quick start
 
-You need Docker with Docker Compose.
+You need Docker with Docker Compose, or Podman.
 
 ```bash
 git clone https://github.com/Yultas/piop.git
 cd piop
-cp .env.example .env
-docker compose up -d --build
+./start.sh
 ```
 
-Open `http://localhost:3000` and sign in as `admin`. If you didn't set a password in `.env`, a random one is printed on first start:
+`start.sh` creates `.env` from `.env.example` if it's missing, builds and starts the stack with `docker compose` (or `podman compose` when Docker isn't installed), and prints the site address and the generated `admin` password when it finishes. Set `COMPOSE` to choose the command yourself, e.g. `COMPOSE="podman compose" ./start.sh`.
 
-```bash
-docker compose logs backend | grep "superadmin password"
-```
+The site is at `http://localhost:3000`. The random admin password is printed only on the first start, so save it. If you lose it on a fresh install, `docker compose down -v && ./start.sh` starts over (this deletes all data).
 
 To enable the AI assistant, open **Admin → AI settings** and enter the API URL, key and model.
 
