@@ -32,6 +32,7 @@ CLOSE_NOT_FOUND = 4404
 SAVE_DELAY = 2.0       # seconds of quiet before a debounced save
 SAVE_MAX_DELAY = 10.0  # an unsaved change is never older than this
 MAX_OPS = 5000
+ACCESS_RECHECK_SECONDS = 30.0  # an open socket re-checks its user's access at most this often
 
 
 # ---------- document model ----------
@@ -539,16 +540,8 @@ board_rooms = RoomManager()
 
 # ---------- endpoint ----------
 
-async def _authorize(websocket: WebSocket, workspace_id: int, document_id: int) -> tuple[Optional[str], Optional[int]]:
-    """Handshake checks in protocol order. Returns (username, None) or (None, close_code)."""
-    origin = websocket.headers.get("origin")
-    if origin is not None:
-        origin_host = urlsplit(origin).hostname
-        host_name = urlsplit("//" + websocket.headers.get("host", "")).hostname
-        if not origin_host or origin_host != host_name:
-            return None, CLOSE_FORBIDDEN
-
-    token = websocket.cookies.get(SESSION_COOKIE)
+async def _check_access(token: Optional[str], workspace_id: int, document_id: int) -> tuple[Optional[str], Optional[int]]:
+    """Session, membership and document checks. Returns (username, None) or (None, close_code)."""
     if not token:
         return None, CLOSE_UNAUTHORIZED
 
@@ -569,6 +562,18 @@ async def _authorize(websocket: WebSocket, workspace_id: int, document_id: int) 
         return user.username, None
 
 
+async def _authorize(websocket: WebSocket, workspace_id: int, document_id: int) -> tuple[Optional[str], Optional[int]]:
+    """Handshake checks in protocol order. Returns (username, None) or (None, close_code)."""
+    origin = websocket.headers.get("origin")
+    if origin is not None:
+        origin_host = urlsplit(origin).hostname
+        host_name = urlsplit("//" + websocket.headers.get("host", "")).hostname
+        if not origin_host or origin_host != host_name:
+            return None, CLOSE_FORBIDDEN
+
+    return await _check_access(websocket.cookies.get(SESSION_COOKIE), workspace_id, document_id)
+
+
 @router.websocket("/api/workspaces/{workspace_id}/documents/{document_id}/ws")
 async def board_socket(websocket: WebSocket, workspace_id: int, document_id: int):
     await websocket.accept()
@@ -576,17 +581,27 @@ async def board_socket(websocket: WebSocket, workspace_id: int, document_id: int
     if code is not None:
         await websocket.close(code=code)
         return
+    token = websocket.cookies.get(SESSION_COOKIE)
 
     conn_id = uuid.uuid4().hex[:12]
     room = await board_rooms.join(document_id, conn_id, websocket, username)
     if room is None:
         await websocket.close(code=CLOSE_NOT_FOUND)
         return
+    loop = asyncio.get_running_loop()
+    checked_at = loop.time()
     try:
         while True:
             message = await websocket.receive()
             if message["type"] == "websocket.disconnect":
                 break
+            # Access is re-checked on incoming traffic, at most once per ACCESS_RECHECK_SECONDS.
+            if loop.time() - checked_at >= ACCESS_RECHECK_SECONDS:
+                checked_at = loop.time()
+                _, code = await _check_access(token, workspace_id, document_id)
+                if code is not None:
+                    await websocket.close(code=code)
+                    break
             text = message.get("text")
             if text is None:
                 await board_rooms.resync(room, conn_id)

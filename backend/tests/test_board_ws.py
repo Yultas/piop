@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import sys
 import time
 import uuid
@@ -12,6 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from backend.app.main import app
 from backend.app.config import settings
+from backend.app.routes import board_ws
 from backend.app.routes.board_ws import apply_ops, parse_board, validate_batch
 
 CLOSE_UNAUTHORIZED = 4401
@@ -96,6 +98,44 @@ def _wait_until(pred, timeout: float) -> bool:
             return True
         time.sleep(0.05)
     return pred()
+
+
+def _add_member(http, token, wid) -> tuple[str, int]:
+    """Claims a fresh non-admin member invite for the workspace. Returns (session token, user id)."""
+    headers = _bearer(token)
+    invite = http.post("/api/invites", json={
+        "workspace_id": wid, "target_role": "member", "expires_in_days": 3,
+    }, headers=headers)
+    assert invite.status_code == 200
+    username = f"bws_{uuid.uuid4().hex[:8]}"
+    claim = http.post(f"/api/invites/{invite.json()['token']}/claim", json={
+        "username": username,
+        "password": "SecureBoardWsPass_2026!",
+        "raw_fingerprint": f"EINK_BOARD_WS_{uuid.uuid4().hex}",
+    })
+    assert claim.status_code == 200
+    user_id = next(u["id"] for u in http.get("/api/admin/users", headers=headers).json()
+                   if u["username"] == username)
+    return claim.json()["access_token"], user_id
+
+
+def _db_file() -> str:
+    return settings.DATABASE_URL.split("///", 1)[1]
+
+
+def _db_exec(sql: str, args: tuple = ()) -> None:
+    # The suite runs on its own temporary database file (see conftest.py).
+    conn = sqlite3.connect(_db_file())
+    try:
+        with conn:
+            conn.execute(sql, args)
+    finally:
+        conn.close()
+
+
+@pytest.fixture
+def no_recheck_throttle(monkeypatch):
+    monkeypatch.setattr(board_ws, "ACCESS_RECHECK_SECONDS", 0.0)
 
 
 # ---------- socket behaviour ----------
@@ -195,6 +235,45 @@ def test_non_canvas_document_closes_4404(http, token):
         with http.websocket_connect(_path(wid, did), headers=_cookie(token)) as ws:
             ws.receive_text()
     assert exc.value.code == CLOSE_NOT_FOUND
+
+
+# ---------- access re-checked on an open socket ----------
+
+def test_member_removed_while_connected_closes_4403(http, token, no_recheck_throttle):
+    wid, did = _make_board(http, token)
+    member_token, member_id = _add_member(http, token, wid)
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with http.websocket_connect(_path(wid, did), headers=_cookie(member_token)) as ws:
+            _recv_until(ws, "init")
+            _db_exec("DELETE FROM workspacemember WHERE workspace_id = ? AND user_id = ?", (wid, member_id))
+            # The pong is only sent after the message was checked, so a close comes first when access is gone.
+            ws.send_text(json.dumps({"t": "ping"}))
+            _recv_until(ws, "pong")
+    assert exc.value.code == CLOSE_FORBIDDEN
+
+
+def test_user_deactivated_while_connected_closes_4401(http, token, no_recheck_throttle):
+    wid, did = _make_board(http, token)
+    member_token, member_id = _add_member(http, token, wid)
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with http.websocket_connect(_path(wid, did), headers=_cookie(member_token)) as ws:
+            _recv_until(ws, "init")
+            _db_exec('UPDATE "user" SET is_active = 0 WHERE id = ?', (member_id,))
+            ws.send_text(json.dumps({"t": "ping"}))
+            _recv_until(ws, "pong")
+    assert exc.value.code == CLOSE_UNAUTHORIZED
+
+
+def test_user_deleted_while_connected_closes_4401(http, token, no_recheck_throttle):
+    wid, did = _make_board(http, token)
+    member_token, member_id = _add_member(http, token, wid)
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with http.websocket_connect(_path(wid, did), headers=_cookie(member_token)) as ws:
+            _recv_until(ws, "init")
+            assert http.delete(f"/api/admin/users/{member_id}", headers=_bearer(token)).status_code == 200
+            ws.send_text(json.dumps({"t": "ping"}))
+            _recv_until(ws, "pong")
+    assert exc.value.code == CLOSE_UNAUTHORIZED
 
 
 # ---------- op semantics (no socket) ----------
