@@ -80,7 +80,7 @@
         </div>
 
         <div v-show="notebookTypstView === 'notebook'" class="tab-pane">
-          <MarkdownMermaid :workspace-id="workspace.id" />
+          <MarkdownMermaid :workspace-id="workspace.id" v-model:doc-id="docId" />
         </div>
         <div v-show="notebookTypstView === 'typst'" class="tab-pane">
           <TypstRenderer :workspace-id="workspace.id" />
@@ -102,7 +102,7 @@
           <MindMap :workspace-id="workspace.id" />
         </div>
         <div v-show="mindmapCanvasView === 'canvas'" class="tab-pane">
-          <CanvasWhiteboard :workspace-id="workspace.id" />
+          <CanvasWhiteboard :workspace-id="workspace.id" v-model:selected-board-id="boardId" />
         </div>
       </div>
 
@@ -154,8 +154,8 @@
 
 <script setup>
 import { ArrowLeft, MessageSquare } from 'lucide-vue-next'
-import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useWorkspaceStore } from '../stores/workspace'
 
 // E-Ink Feature Components
@@ -172,6 +172,7 @@ import AssistantPanel from '../components/AssistantPanel.vue'
 import EinkDrawer from '../components/EinkDrawer.vue'
 
 const route = useRoute()
+const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 
 const workspace = ref(null)
@@ -186,12 +187,50 @@ const tabs = [
   { id: 'quizzes' },
   { id: 'files' }
 ]
-const currentTab = ref('chat_tasks')
+const SUBVIEWS = {
+  chat_tasks: ['split', 'chat', 'tasks'],
+  notebook_typst: ['notebook', 'typst'],
+  mindmap_canvas: ['mindmap', 'canvas']
+}
+function queryId(v) {
+  const n = Number(v)
+  return Number.isInteger(n) && n > 0 ? n : null
+}
 
-// Submodule layout states
-const chatTasksView = ref('split')
-const notebookTypstView = ref('notebook')
-const mindmapCanvasView = ref('mindmap')
+// Active tab, restored from the URL query (?tab=)
+const currentTab = ref(tabs.some((t) => t.id === route.query.tab) ? route.query.tab : 'chat_tasks')
+
+// Submodule layout states, restored from ?view= for the active tab only
+function initialSub(tab, fallback) {
+  return currentTab.value === tab && SUBVIEWS[tab].includes(route.query.view) ? route.query.view : fallback
+}
+const chatTasksView = ref(initialSub('chat_tasks', 'split'))
+const notebookTypstView = ref(initialSub('notebook_typst', 'notebook'))
+const mindmapCanvasView = ref(initialSub('mindmap_canvas', 'mindmap'))
+
+// Open whiteboard board and notebook document, restored from ?board= and ?doc=
+const boardId = ref(queryId(route.query.board))
+const docId = ref(queryId(route.query.doc))
+
+// Mirror the view state into the URL so a reload restores it
+function buildQuery() {
+  const query = { tab: currentTab.value }
+  const subRefs = { chat_tasks: chatTasksView, notebook_typst: notebookTypstView, mindmap_canvas: mindmapCanvasView }
+  if (subRefs[currentTab.value]) query.view = subRefs[currentTab.value].value
+  if (currentTab.value === 'mindmap_canvas' && mindmapCanvasView.value === 'canvas' && boardId.value) {
+    query.board = String(boardId.value)
+  }
+  if (currentTab.value === 'notebook_typst' && notebookTypstView.value === 'notebook' && docId.value) {
+    query.doc = String(docId.value)
+  }
+  return query
+}
+watch([currentTab, chatTasksView, notebookTypstView, mindmapCanvasView, boardId, docId], () => {
+  const query = buildQuery()
+  const keys = Object.keys(query)
+  const unchanged = keys.length === Object.keys(route.query).length && keys.every((k) => route.query[k] === query[k])
+  if (!unchanged) router.replace({ query })
+})
 
 // Live storage tracking
 const liveUsedBytes = ref(null)

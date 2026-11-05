@@ -180,8 +180,13 @@ const props = defineProps({
   workspaceId: {
     type: [Number, String],
     required: true
+  },
+  selectedBoardId: {
+    type: Number,
+    default: null
   }
 })
+const emit = defineEmits(['update:selectedBoardId'])
 
 const { t } = useI18n()
 
@@ -1529,6 +1534,7 @@ watch(() => props.workspaceId, async (id) => {
 })
 
 watch(tool, updateCursor)
+watch(boardId, (id) => emit('update:selectedBoardId', id))
 
 onMounted(() => {
   resizeObserver = new ResizeObserver(resize)
@@ -1537,7 +1543,7 @@ onMounted(() => {
   window.addEventListener('keyup', onKeyUp)
   window.addEventListener('beforeunload', onBeforeUnload)
   resize()
-  fetchBoards()
+  fetchBoards(props.selectedBoardId)
 })
 
 onBeforeUnmount(() => {

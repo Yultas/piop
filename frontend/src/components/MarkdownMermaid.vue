@@ -159,8 +159,13 @@ const props = defineProps({
   workspaceId: {
     type: [Number, String],
     required: true
+  },
+  docId: {
+    type: Number,
+    default: null
   }
 })
+const emit = defineEmits(['update:docId'])
 
 const defaultMarkdown = `# 📋 Архитектурный план проекта
 
@@ -418,8 +423,15 @@ watch(
   }
 )
 
+watch(currentDocId, (id) => emit('update:docId', id))
+
 onMounted(() => {
-  fetchDocuments()
+  fetchDocuments().then(() => {
+    if (props.docId && !currentDocId.value && documents.value.some((d) => d.id === props.docId)) {
+      selectedDocId.value = props.docId
+      loadDocument()
+    }
+  })
   renderMermaidDiagrams()
 })
 </script>
