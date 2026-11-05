@@ -45,11 +45,59 @@ All settings are optional and live in `.env`:
 
 Data (database, uploads, secrets) is kept in the `piop-data` Docker volume.
 
+## Connecting AI agents (MCP)
+
+Pi'op has an MCP server at `<site>/api/mcp` (Streamable HTTP, Bearer token auth). External AI agents such as Claude Code or Claude Desktop can use it to work in your workspaces.
+
+1. Click the **API tokens** key button in the navbar and create a token. It starts with `piop_` and is shown only once. Revoke it there at any time.
+2. Add the server to your client. Replace the URL with your site address and the token with yours.
+
+Claude Code:
+
+```bash
+claude mcp add --transport http piop https://piop.example.com/api/mcp --header "Authorization: Bearer piop_..."
+```
+
+Clients that take a JSON config:
+
+```json
+{
+  "mcpServers": {
+    "piop": {
+      "type": "http",
+      "url": "https://piop.example.com/api/mcp",
+      "headers": {
+        "Authorization": "Bearer piop_..."
+      }
+    }
+  }
+}
+```
+
+The agent calls `list_workspaces` first, then passes `workspace_id` to the other tools: `search_workspace`, `list_tasks`, `list_documents`, `read_document`, `list_channels`, `read_messages`, `list_files`, `create_task`, `update_task`, `create_document`, `update_document`, `send_message`, `delete_task` and `delete_document`.
+
+- The workspace AI settings apply to agents too. An action set to "off" is refused, and deletes are off by default. Actions set to "confirm" run, and your MCP client asks you to approve them.
+- A token has your full rights on the whole API, in every workspace you are a member of. Revoke tokens you no longer need.
+
 ## Exposing it to the internet
 
 For a private team, the safest option is a VPN such as Tailscale, Headscale, NetBird or WireGuard, with nothing exposed publicly.
 
 If you need a public URL, put an HTTPS reverse proxy in front of port 3000. Caddy works, and so does Cloudflare Tunnel, which needs no public IP. Don't serve it over plain HTTP on the internet.
+
+Minimal Caddy setup on a VPS:
+
+1. Install Caddy.
+2. Create a DNS A record for your domain, e.g. `piop.example.com`, pointing to the VPS.
+3. Put this in the Caddyfile:
+
+   ```
+   piop.example.com {
+       reverse_proxy localhost:3000
+   }
+   ```
+
+Caddy gets and renews the Let's Encrypt certificate automatically. Open ports 80 and 443 only, and keep 3000 closed in the firewall (e.g. `ufw allow 80,443/tcp`). The MCP URL is then `https://piop.example.com/api/mcp`.
 
 ## Development
 
