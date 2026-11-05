@@ -47,6 +47,15 @@
         </button>
 
         <template v-if="authStore.isAuthenticated">
+          <button
+            type="button"
+            class="eink-btn eink-btn-sm"
+            :title="$t('tokens.button')"
+            @click="showTokens = true"
+          >
+            <KeyRound :size="14" />
+            <span class="hide-sm">{{ $t('tokens.button') }}</span>
+          </button>
           <span class="username hide-sm text-xs">{{ authStore.username }}</span>
           <button
             type="button"
@@ -57,6 +66,7 @@
             <LogOut :size="14" />
             <span class="hide-sm">{{ $t('nav.logout') }}</span>
           </button>
+          <ApiTokensModal :open="showTokens" @close="showTokens = false" />
         </template>
 
         <router-link v-else-if="$route.name !== 'login'" to="/login" class="eink-btn eink-btn-sm eink-btn-primary">
@@ -68,18 +78,20 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Settings, LogOut, PenTool } from 'lucide-vue-next'
+import { Settings, LogOut, PenTool, KeyRound } from 'lucide-vue-next'
 import { useAuthStore } from '../stores/auth'
 import { useWorkspaceStore } from '../stores/workspace'
 import { setLocale } from '../i18n'
+import ApiTokensModal from './ApiTokensModal.vue'
 
 const router = useRouter()
 const { locale } = useI18n()
 const authStore = useAuthStore()
 const workspaceStore = useWorkspaceStore()
+const showTokens = ref(false)
 
 const currentLang = computed(() => locale.value)
 

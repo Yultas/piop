@@ -47,6 +47,7 @@
     "account_disabled": "Account is disabled",
     "unauthorized": "Session expired or authentication required",
     "admin_required": "Global administrator privileges required",
+    "session_required": "This action needs a browser session, not an API token",
     "admin_badge": "Admin",
     "invite": {
       "not_found": "Invite not found or corrupted link",
@@ -433,5 +434,32 @@
     "settings_saved": "AI settings saved",
     "conversation_not_found": "Conversation not found",
     "pending_actions": "Approve or reject the pending actions first"
+  },
+  "tokens": {
+    "button": "API tokens",
+    "title": "API tokens",
+    "intro": "Tokens let AI agents (MCP clients) work in Pi'op with your rights in every workspace you belong to. Revoke a token when you no longer need it.",
+    "mcp_url": "MCP endpoint",
+    "name_label": "Token name",
+    "name_placeholder": "e.g. Claude Code on my laptop",
+    "create_btn": "Create token",
+    "created_heading": "New token",
+    "created_warning": "Copy this token now. It will not be shown again.",
+    "token_label": "Token",
+    "command_label": "Command for Claude Code",
+    "list_heading": "Your tokens",
+    "empty": "No tokens yet",
+    "col_name": "Name",
+    "col_prefix": "Prefix",
+    "col_created": "Created",
+    "col_last_used": "Last used",
+    "never": "never",
+    "revoke": "Revoke",
+    "revoke_confirm": "Revoke?",
+    "created": "Token created",
+    "revoked": "Token revoked",
+    "limit": "Token limit reached (20). Revoke an unused token first",
+    "name_required": "Enter a token name",
+    "not_found": "Token not found"
   }
 }
