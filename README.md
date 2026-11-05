@@ -118,3 +118,7 @@ cd frontend && npm install && npm run dev
 # Tests
 backend/.venv/bin/python -m pytest backend/tests -q
 ```
+
+## License
+
+[MIT](LICENSE)
