@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: piop-backend
+    restart: unless-stopped
+    # nginx in the frontend container reaches backend over the compose network; host port is for local debugging only
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
+    environment:
+      - PROJECT_NAME=${PROJECT_NAME:-Pi'op}
+      - SECRET_KEY=${SECRET_KEY:-}
+      - ALGORITHM=${ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+      - DEFAULT_WORKSPACE_STORAGE_QUOTA_MB=${DEFAULT_WORKSPACE_STORAGE_QUOTA_MB:-500}
+      - FINGERPRINT_PEPPER=${FINGERPRINT_PEPPER:-}
+      - SUPERADMIN_USERNAME=${SUPERADMIN_USERNAME:-admin}
+      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-[]}
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/app.db
+      - UPLOAD_DIR=/app/data/uploads
+    volumes:
+      - piop-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: piop-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+
+volumes:
+  piop-data:
+    driver: local

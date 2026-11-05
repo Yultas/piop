@@ -1,0 +1,24 @@
+# Secrets and local configuration
+.env
+.claude/
+
+# Runtime data (SQLite database, uploads, generated secrets.json)
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Frontend
+node_modules/
+dist/
+
+# Local agent tooling, not part of the app
+skills/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

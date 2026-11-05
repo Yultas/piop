@@ -1,0 +1,26 @@
+{
+  "name": "eink-workspace-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.17",
+    "lucide-vue-next": "^0.468.0",
+    "marked": "^15.0.4",
+    "mermaid": "^11.4.1",
+    "perfect-freehand": "1.2.2",
+    "pinia": "^2.3.0",
+    "vue": "^3.5.13",
+    "vue-i18n": "^9.14.2",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.3"
+  }
+}

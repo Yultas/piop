@@ -1,0 +1,54 @@
+/**
+ * Dedicated Font Separation for E-Ink Interface
+ * Explicitly separates Serif (Reading/Docs), Sans (UI/Controls), and Mono (Code/Typst/Data).
+ */
+
+:root {
+  /* High-contrast Serif for long-form reading, documentation and articles */
+  --font-serif: "Newsreader", "Charter", "Georgia", "Cambria", "Times New Roman", serif;
+
+  /* Functional geometric Sans for UI controls, navigation, buttons, and task cards */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Crisp Monospace for code, typst source, mathematical formulas, and technical hashes */
+  --font-mono: "JetBrains Mono", "Fira Code", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+/* Base application typography rules */
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-serif {
+  font-family: var(--font-serif) !important;
+}
+
+.font-sans {
+  font-family: var(--font-sans) !important;
+}
+
+.font-mono {
+  font-family: var(--font-mono) !important;
+}
+
+/* Specialized contexts */
+.doc-prose {
+  font-family: var(--font-serif);
+  line-height: 1.7;
+}
+
+.code-block,
+pre,
+code {
+  font-family: var(--font-mono);
+}
+
+.ui-label,
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-sans);
+}
