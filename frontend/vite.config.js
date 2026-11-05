@@ -23,6 +23,7 @@ export default defineConfig({
       '/api': {
         target: process.env.VITE_BACKEND_URL || 'http://localhost:8080',
         changeOrigin: true,
+        ws: true,
         configure: (proxy) => {
           // Never trust a client-sent X-Real-IP: the backend rate-limits by it
           proxy.on('proxyReq', (proxyReq, req) => proxyReq.setHeader('X-Real-IP', req.socket.remoteAddress || ''))

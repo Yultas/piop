@@ -156,7 +156,7 @@ function randomCase(seed) {
 
 test('el.add inserts at the index and clamps it to the layer bounds', () => {
   const s = { layers: [layer('A', [el('a'), el('b')])], background: 'dots' }
-  const at = index => shape(applyOps(s, [{ t: 'el.add', layer: 'A', index, el: el('c') }]).layers)
+  const at = index => shape(applyOps(s, [{ op: 'el.add', layer: 'A', index, el: el('c') }]).layers)
   assert.deepStrictEqual(at(1), [['A', ['a', 'c', 'b']]])
   assert.deepStrictEqual(at(99), [['A', ['a', 'b', 'c']]])
   assert.deepStrictEqual(at(-5), [['A', ['c', 'a', 'b']]])
@@ -164,77 +164,77 @@ test('el.add inserts at the index and clamps it to the layer bounds', () => {
 
 test('el.add of an existing id moves the element (remove, then insert)', () => {
   const s = { layers: [layer('A', [el('a'), el('b')]), layer('B', [el('c')])], background: 'dots' }
-  const across = applyOps(s, [{ t: 'el.add', layer: 'B', index: 0, el: el('a') }])
+  const across = applyOps(s, [{ op: 'el.add', layer: 'B', index: 0, el: el('a') }])
   assert.deepStrictEqual(shape(across.layers), [['A', ['b']], ['B', ['a', 'c']]])
-  const within = applyOps(s, [{ t: 'el.add', layer: 'A', index: 2, el: el('a') }])
+  const within = applyOps(s, [{ op: 'el.add', layer: 'A', index: 2, el: el('a') }])
   assert.deepStrictEqual(shape(within.layers), [['A', ['b', 'a']], ['B', ['c']]])
 })
 
 test('el.add to a missing layer is skipped without removing the element', () => {
   const s = { layers: [layer('A', [el('a')])], background: 'dots' }
-  const out = applyOps(s, [{ t: 'el.add', layer: 'Z', index: 0, el: el('a') }])
+  const out = applyOps(s, [{ op: 'el.add', layer: 'Z', index: 0, el: el('a') }])
   assert.deepStrictEqual(shape(out.layers), [['A', ['a']]])
 })
 
 test('el.set assigns and unsets keys; a missing element is skipped', () => {
   const s = { layers: [layer('A', [el('a', { label: 'x', w: 1 })])], background: 'dots' }
-  const out = applyOps(s, [{ t: 'el.set', id: 'a', set: { x: 5, w: 2 }, unset: ['label'] }])
+  const out = applyOps(s, [{ op: 'el.set', id: 'a', set: { x: 5, w: 2 }, unset: ['label'] }])
   assert.deepStrictEqual(out.layers[0].elements[0], { id: 'a', type: 'rect', x: 5, y: 0, w: 2 })
-  assert.deepStrictEqual(applyOps(s, [{ t: 'el.set', id: 'nope', set: { x: 1 } }]).layers, s.layers)
+  assert.deepStrictEqual(applyOps(s, [{ op: 'el.set', id: 'nope', set: { x: 1 } }]).layers, s.layers)
 })
 
 test('el.del removes the element and ignores a missing id', () => {
   const s = { layers: [layer('A', [el('a'), el('b')])], background: 'dots' }
-  assert.deepStrictEqual(shape(applyOps(s, [{ t: 'el.del', id: 'a' }]).layers), [['A', ['b']]])
-  assert.deepStrictEqual(shape(applyOps(s, [{ t: 'el.del', id: 'zz' }]).layers), [['A', ['a', 'b']]])
+  assert.deepStrictEqual(shape(applyOps(s, [{ op: 'el.del', id: 'a' }]).layers), [['A', ['b']]])
+  assert.deepStrictEqual(shape(applyOps(s, [{ op: 'el.del', id: 'zz' }]).layers), [['A', ['a', 'b']]])
 })
 
 test('el.order lists ids first and appends unlisted elements in current order', () => {
   const s = { layers: [layer('A', [el('a'), el('b'), el('c'), el('d')]), layer('B', [el('x')])], background: 'dots' }
-  const out = applyOps(s, [{ t: 'el.order', layer: 'A', ids: ['c', 'x', 'missing', 'a', 'c'] }])
+  const out = applyOps(s, [{ op: 'el.order', layer: 'A', ids: ['c', 'x', 'missing', 'a', 'c'] }])
   assert.deepStrictEqual(shape(out.layers), [['A', ['c', 'a', 'b', 'd']], ['B', ['x']]])
 })
 
 test('layer.add inserts at the clamped index and takes elements away from other layers', () => {
   const s = { layers: [layer('A', [el('a'), el('b')]), layer('B', [el('c')])], background: 'dots' }
-  const out = applyOps(s, [{ t: 'layer.add', index: 1, layer: layer('N', [el('b'), el('n')]) }])
+  const out = applyOps(s, [{ op: 'layer.add', index: 1, layer: layer('N', [el('b'), el('n')]) }])
   assert.deepStrictEqual(shape(out.layers), [['A', ['a']], ['N', ['b', 'n']], ['B', ['c']]])
-  const end = applyOps(s, [{ t: 'layer.add', index: 50, layer: layer('M') }])
+  const end = applyOps(s, [{ op: 'layer.add', index: 50, layer: layer('M') }])
   assert.deepStrictEqual(shape(end.layers).map(([id]) => id), ['A', 'B', 'M'])
 })
 
 test('layer.add replaces an existing layer with the same id', () => {
   const s = { layers: [layer('A', [el('a')]), layer('B')], background: 'dots' }
-  const out = applyOps(s, [{ t: 'layer.add', index: 0, layer: layer('A', [el('z')]) }])
+  const out = applyOps(s, [{ op: 'layer.add', index: 0, layer: layer('A', [el('z')]) }])
   assert.deepStrictEqual(shape(out.layers), [['A', ['z']], ['B', []]])
 })
 
 test('layer.set assigns name, visible and locked; a missing layer is skipped', () => {
   const s = { layers: [layer('A')], background: 'dots' }
-  const out = applyOps(s, [{ t: 'layer.set', id: 'A', set: { name: 'Ink', visible: false, locked: true } }])
+  const out = applyOps(s, [{ op: 'layer.set', id: 'A', set: { name: 'Ink', visible: false, locked: true } }])
   assert.deepStrictEqual(out.layers[0], { id: 'A', name: 'Ink', visible: false, locked: true, elements: [] })
-  assert.deepStrictEqual(applyOps(s, [{ t: 'layer.set', id: 'Z', set: { name: 'x' } }]).layers, s.layers)
+  assert.deepStrictEqual(applyOps(s, [{ op: 'layer.set', id: 'Z', set: { name: 'x' } }]).layers, s.layers)
 })
 
 test('layer.del removes a layer but skips the only one', () => {
   const s = { layers: [layer('A'), layer('B')], background: 'dots' }
-  assert.deepStrictEqual(shape(applyOps(s, [{ t: 'layer.del', id: 'A' }]).layers), [['B', []]])
+  assert.deepStrictEqual(shape(applyOps(s, [{ op: 'layer.del', id: 'A' }]).layers), [['B', []]])
   const one = { layers: [layer('A')], background: 'dots' }
-  assert.deepStrictEqual(shape(applyOps(one, [{ t: 'layer.del', id: 'A' }]).layers), [['A', []]])
+  assert.deepStrictEqual(shape(applyOps(one, [{ op: 'layer.del', id: 'A' }]).layers), [['A', []]])
 })
 
 test('layer.order lists ids first and appends unlisted layers', () => {
   const s = { layers: [layer('A'), layer('B'), layer('C')], background: 'dots' }
-  const out = applyOps(s, [{ t: 'layer.order', ids: ['C', 'A'] }])
+  const out = applyOps(s, [{ op: 'layer.order', ids: ['C', 'A'] }])
   assert.deepStrictEqual(out.layers.map(l => l.id), ['C', 'A', 'B'])
 })
 
 test('doc.set changes background; title and unknown ops are ignored', () => {
   const s = { layers: [layer('A')], background: 'dots' }
   const out = applyOps(s, [
-    { t: 'doc.set', set: { background: 'grid' } },
-    { t: 'title', title: 'Board' },
-    { t: 'bogus', x: 1 }
+    { op: 'doc.set', set: { background: 'grid' } },
+    { op: 'title', title: 'Board' },
+    { op: 'bogus', x: 1 }
   ])
   assert.deepStrictEqual(out, { layers: s.layers, background: 'grid' })
 })
@@ -249,8 +249,8 @@ test('applyOps keeps untouched layers and elements by identity and never mutates
   const state = deepFreeze({ layers: [A, B, C], background: 'dots' })
   const snapshot = structuredClone(state)
   const ops = deepFreeze([
-    { t: 'el.set', id: 'a2', set: { x: 9 } },
-    { t: 'el.del', id: 'b1' }
+    { op: 'el.set', id: 'a2', set: { x: 9 } },
+    { op: 'el.del', id: 'b1' }
   ])
 
   const out = applyOps(state, ops)
@@ -276,15 +276,15 @@ test('diffState: element add and remove emit el.del and el.add, no el.order', ()
   const prev = { layers: [layer('A', [el('a'), b])], background: 'dots' }
   const next = { layers: [layer('A', [b, c])], background: 'dots' }
   assert.deepStrictEqual(diffState(prev, next), [
-    { t: 'el.del', id: 'a' },
-    { t: 'el.add', layer: 'A', index: 1, el: c }
+    { op: 'el.del', id: 'a' },
+    { op: 'el.add', layer: 'A', index: 1, el: c }
   ])
 })
 
 test('diffState: changed keys become el.set with set and unset', () => {
   const prev = { layers: [layer('A', [el('a', { label: 'hi', x: 0 })])], background: 'dots' }
   const next = { layers: [layer('A', [el('a', { x: 5 })])], background: 'dots' }
-  assert.deepStrictEqual(diffState(prev, next), [{ t: 'el.set', id: 'a', set: { x: 5 }, unset: ['label'] }])
+  assert.deepStrictEqual(diffState(prev, next), [{ op: 'el.set', id: 'a', set: { x: 5 }, unset: ['label'] }])
 })
 
 test('diffState: a reorder within a layer emits el.order with the full next id list', () => {
@@ -293,7 +293,7 @@ test('diffState: a reorder within a layer emits el.order with the full next id l
   const c = el('c')
   const prev = { layers: [layer('A', [a, b, c])], background: 'dots' }
   const next = { layers: [layer('A', [c, a, b])], background: 'dots' }
-  assert.deepStrictEqual(diffState(prev, next), [{ t: 'el.order', layer: 'A', ids: ['c', 'a', 'b'] }])
+  assert.deepStrictEqual(diffState(prev, next), [{ op: 'el.order', layer: 'A', ids: ['c', 'a', 'b'] }])
 })
 
 test('diffState: layer add, delete, flag change and reorder', () => {
@@ -303,19 +303,19 @@ test('diffState: layer add, delete, flag change and reorder', () => {
   const N = layer('N')
   assert.deepStrictEqual(
     diffState({ layers: [A, B], background: 'dots' }, { layers: [A, N, B], background: 'dots' }),
-    [{ t: 'layer.add', index: 1, layer: N }]
+    [{ op: 'layer.add', index: 1, layer: N }]
   )
   assert.deepStrictEqual(
     diffState({ layers: [A, B], background: 'dots' }, { layers: [A], background: 'dots' }),
-    [{ t: 'layer.del', id: 'B' }]
+    [{ op: 'layer.del', id: 'B' }]
   )
   assert.deepStrictEqual(
     diffState({ layers: [A], background: 'dots' }, { layers: [{ ...A, name: 'x', locked: true }], background: 'dots' }),
-    [{ t: 'layer.set', id: 'A', set: { name: 'x', locked: true } }]
+    [{ op: 'layer.set', id: 'A', set: { name: 'x', locked: true } }]
   )
   assert.deepStrictEqual(
     diffState({ layers: [A, B, C], background: 'dots' }, { layers: [C, A, B], background: 'dots' }),
-    [{ t: 'layer.order', ids: ['C', 'A', 'B'] }]
+    [{ op: 'layer.order', ids: ['C', 'A', 'B'] }]
   )
 })
 
@@ -323,7 +323,7 @@ test('diffState: background change emits doc.set', () => {
   const layers = [layer('A')]
   assert.deepStrictEqual(
     diffState({ layers, background: 'dots' }, { layers, background: 'grid' }),
-    [{ t: 'doc.set', set: { background: 'grid' } }]
+    [{ op: 'doc.set', set: { background: 'grid' } }]
   )
 })
 
