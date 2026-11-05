@@ -85,19 +85,38 @@ async def get_current_user(
         # Defense in depth on top of SameSite=Strict.
         if request.method not in SAFE_METHODS and request.headers.get("x-piop-csrf") != "1":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="auth.csrf")
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="auth.invalid_token")
-    except jwt.PyJWTError:
+    payload = _decode_session_token(token)
+    if payload is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="auth.invalid_token")
 
-    user = await session.get(User, int(user_id))
+    user = await session.get(User, int(payload["sub"]))
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="auth.user_not_found")
     if payload.get("uct") != _created_stamp(user):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="auth.invalid_token")
+    return user
+
+def _decode_session_token(token: str) -> Optional[dict]:
+    """Signature and expiry check plus presence of `sub`. None on any failure."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except jwt.PyJWTError:
+        return None
+    if payload.get("sub") is None:
+        return None
+    return payload
+
+async def user_from_session_token(token: str, session: AsyncSession) -> Optional[User]:
+    """Non-raising session-cookie check for non-HTTP callers (WebSocket handshake). None on any failure."""
+    payload = _decode_session_token(token)
+    if payload is None:
+        return None
+    try:
+        user = await session.get(User, int(payload["sub"]))
+    except (TypeError, ValueError):
+        return None
+    if not user or not user.is_active or payload.get("uct") != _created_stamp(user):
+        return None
     return user
 
 async def _user_from_api_token(request: Request, token: str, session: AsyncSession) -> User:
