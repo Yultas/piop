@@ -38,6 +38,15 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
+def _created_stamp(user: User) -> int:
+    # Microseconds since the epoch; created_at comes back from SQLite without tzinfo, but it is UTC.
+    created = user.created_at.replace(tzinfo=timezone.utc)
+    return (created - datetime(1970, 1, 1, tzinfo=timezone.utc)) // timedelta(microseconds=1)
+
+def create_user_token(user: User) -> str:
+    # SQLite reuses the ids of deleted users, so the token is bound to this account's creation time too.
+    return create_access_token({"sub": str(user.id), "username": user.username, "uct": _created_stamp(user)})
+
 def set_session_cookie(response: Response, request: Request, token: str) -> None:
     # Secure follows the scheme nginx reports, so plain HTTP over a VPN still gets the cookie back.
     https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
@@ -87,6 +96,8 @@ async def get_current_user(
     user = await session.get(User, int(user_id))
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="auth.user_not_found")
+    if payload.get("uct") != _created_stamp(user):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="auth.invalid_token")
     return user
 
 async def _user_from_api_token(request: Request, token: str, session: AsyncSession) -> User:

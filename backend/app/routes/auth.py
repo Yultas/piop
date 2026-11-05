@@ -5,7 +5,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from backend.app.database import get_session
 from backend.app.models import User
 from backend.app.auth import (
-    verify_password, hash_password, create_access_token, get_current_user,
+    verify_password, hash_password, create_user_token, get_current_user,
     set_session_cookie, clear_session_cookie,
 )
 from backend.app.ratelimit import account_limiter, ip_limiter, account_key, client_ip
@@ -54,7 +54,7 @@ async def login(
             detail="auth.account_disabled"
         )
 
-    token = create_access_token({"sub": str(user.id), "username": user.username})
+    token = create_user_token(user)
     account_limiter.reset(key)
     ip_limiter.release(ip, ip_stamp)
     set_session_cookie(response, request, token)

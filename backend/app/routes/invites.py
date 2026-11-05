@@ -7,7 +7,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from backend.app.database import get_session
 from backend.app.models import Workspace, WorkspaceInvite, WorkspaceMember, User
-from backend.app.auth import get_current_user, create_access_token, hash_password, verify_password, set_session_cookie
+from backend.app.auth import get_current_user, create_user_token, hash_password, verify_password, set_session_cookie
 from backend.app.ratelimit import ip_limiter, account_limiter, account_key, client_ip
 from backend.app.fingerprint import compute_device_hash, verify_device_hash
 
@@ -157,7 +157,7 @@ async def claim_invite(
         account_limiter.reset(account)
         ip_limiter.release(ip, ip_stamp)
 
-        access_token = create_access_token({"sub": str(user.id), "username": user.username})
+        access_token = create_user_token(user)
         set_session_cookie(response, request, access_token)
         return {
             "access_token": access_token,
@@ -208,7 +208,7 @@ async def claim_invite(
     await session.commit()
     ip_limiter.release(ip, ip_stamp)
 
-    access_token = create_access_token({"sub": str(user.id), "username": user.username})
+    access_token = create_user_token(user)
     set_session_cookie(response, request, access_token)
     return {
         "access_token": access_token,

@@ -223,3 +223,18 @@ def test_17_client_response_object_gets_202(c):
     res = rpc(c, {"jsonrpc": "2.0", "id": 8, "error": {"code": -32000, "message": "x"}}, api_headers(state["token"]))
     assert res.status_code == 202
     assert res.content == b""
+
+def test_18_deleted_user_session_does_not_reach_next_user(c):
+    """A login session (JWT) of a deleted user must not work for a new user that gets the freed id."""
+    admin = state["jwt"]
+    member, username = make_member(c, admin, state["ws_id"], "gone")
+    member_id = user_id_of(c, admin, username)
+    assert c.get("/api/auth/me", headers=member).status_code == 200
+
+    assert c.delete(f"/api/admin/users/{member_id}", headers=admin).status_code == 200
+    successor_headers, successor = make_member(c, admin, state["ws_id"], "heir")
+    assert user_id_of(c, admin, successor) == member_id
+    res = c.get("/api/auth/me", headers=member)
+    assert res.status_code == 401
+    assert res.json()["detail"] == "auth.invalid_token"
+    assert c.get("/api/auth/me", headers=successor_headers).status_code == 200
