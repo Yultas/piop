@@ -130,3 +130,12 @@ class AIMessage(SQLModel, table=True):
     tool_args: Optional[str] = Field(default=None) # JSON
     status: Optional[str] = Field(default=None) # tool only: "pending", "done", "rejected", "error"
     created_at: datetime = Field(default_factory=utc_now)
+
+class ApiToken(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    name: str
+    token_hash: str = Field(index=True, unique=True) # sha256 hex of the full token; the token itself is never stored
+    prefix: str # first 12 chars of the token, shown in lists
+    created_at: datetime = Field(default_factory=utc_now)
+    last_used_at: Optional[datetime] = Field(default=None)

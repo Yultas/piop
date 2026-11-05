@@ -1,5 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+import hashlib
 import jwt
 import bcrypt
 from fastapi import Depends, HTTPException, Request, Response, status
@@ -8,12 +9,14 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from backend.app.config import settings
 from backend.app.database import get_session
-from backend.app.models import User
+from backend.app.models import ApiToken, User, utc_now
 
 security = HTTPBearer(auto_error=False)
 
 SESSION_COOKIE = "piop_session"
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+API_TOKEN_PREFIX = "piop_"
+API_TOKEN_TOUCH_SECONDS = 60
 
 def hash_password(password: str) -> str:
     pwd_bytes = password.encode('utf-8')
@@ -56,8 +59,11 @@ async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     session: AsyncSession = Depends(get_session)
 ) -> User:
+    request.state.api_token_id = None
     if credentials:
         token = credentials.credentials
+        if token.startswith(API_TOKEN_PREFIX):
+            return await _user_from_api_token(request, token, session)
     else:
         token = request.cookies.get(SESSION_COOKIE)
         if not token:
@@ -81,6 +87,29 @@ async def get_current_user(
     user = await session.get(User, int(user_id))
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="auth.user_not_found")
+    return user
+
+async def _user_from_api_token(request: Request, token: str, session: AsyncSession) -> User:
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    row = (await session.execute(select(ApiToken).where(ApiToken.token_hash == digest))).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="auth.invalid_token")
+    user = await session.get(User, row.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="auth.user_not_found")
+    # Throttled: at most one write per minute per token, not one per request.
+    now = utc_now()
+    if row.last_used_at is None or now - row.last_used_at.replace(tzinfo=timezone.utc) > timedelta(seconds=API_TOKEN_TOUCH_SECONDS):
+        row.last_used_at = now
+        session.add(row)
+        await session.commit()
+    request.state.api_token_id = row.id
+    return user
+
+async def get_session_user(request: Request, user: User = Depends(get_current_user)) -> User:
+    # A leaked API token must not be able to mint or list other tokens, so these routes need a real login.
+    if request.state.api_token_id is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="auth.session_required")
     return user
 
 async def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
